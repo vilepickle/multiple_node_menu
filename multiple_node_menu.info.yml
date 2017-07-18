@@ -1,0 +1,6 @@
+name: 'Multiple Node Menu'
+description: 'Replaces the node menu form with one that can handle multiple parents.'
+core: 8.x
+dependencies:
+  - menu_ui
+type: module
