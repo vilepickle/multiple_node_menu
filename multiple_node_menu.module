@@ -5,6 +5,7 @@
  */
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\menu_link_content\Entity\MenuLinkContent;
+use Drupal\node\NodeInterface;
 
 /**
  * Implements hook_module_implements_alter().
@@ -100,6 +101,88 @@ function multiple_node_menu_node_prepare($node) {
 }
 
 
+/**
+ * Returns the definition for a menu link for the given node.
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The node entity.
+ *
+ * @return array
+ *   An array that contains default values for the menu link form.
+ */
+function multiple_node_menu_get_menu_link_defaults(NodeInterface $node) {
+  // Prepare the definition for the edit form.
+  /** @var \Drupal\node\NodeTypeInterface $node_type */
+  $node_type = $node->type->entity;
+  $menu_name = strtok($node_type->getThirdPartySetting('menu_ui', 'parent', 'main:'), ':');
+  $defaults = FALSE;
+  if ($node->id()) {
+    $id = FALSE;
+    // Give priority to the default menu
+    $type_menus = $node_type->getThirdPartySetting('menu_ui', 'available_menus', ['main']);
+    if (in_array($menu_name, $type_menus)) {
+      $query = \Drupal::entityQuery('menu_link_content')
+        ->condition('link.uri', 'node/' . $node->id())
+        ->condition('menu_name', $menu_name)
+        ->sort('id', 'ASC')
+        ->range(0, 1);
+      $result = $query->execute();
+
+      $id = (!empty($result)) ? reset($result) : FALSE;
+    }
+    // Check all allowed menus if a link does not exist in the default menu.
+    if (!$id && !empty($type_menus)) {
+      $query = \Drupal::entityQuery('menu_link_content')
+        ->condition('link.uri', 'entity:node/' . $node->id())
+        ->condition('menu_name', array_values($type_menus), 'IN')
+        ->sort('id', 'ASC');
+        // ->range(0, 1);
+      $result = $query->execute();
+
+
+      // $ids = (!empty($result)) ? reset($result) : FALSE;
+      $ids = $result;
+    }
+    if ($ids) {
+      foreach ($ids as $key => $id) {
+        $menu_link = MenuLinkContent::load($id);
+        $menu_link = \Drupal::service('entity.repository')->getTranslationFromContext($menu_link);
+        // kint($menu_link);
+        $defaults[] = [
+          'entity_id' => $menu_link->id(),
+          'id' => $menu_link->getPluginId(),
+          'title' => $menu_link->getTitle(),
+          'title_max_length' => $menu_link->getFieldDefinitions()['title']->getSetting('max_length'),
+          'description' => $menu_link->getDescription(),
+          'menu_name' => $menu_link->getMenuName(),
+          'parent' => $menu_link->getParentId(),
+          'weight' => $menu_link->getWeight(),
+          'enabled' => $menu_link->enabled->value,
+        ];
+      } 
+    }
+  }
+
+  if (!$defaults) {
+    // Get the default max_length of a menu link title from the base field
+    // definition.
+    $field_definitions = \Drupal::entityManager()->getBaseFieldDefinitions('menu_link_content');
+    $max_length = $field_definitions['title']->getSetting('max_length');
+    $defaults[] = [
+      'entity_id' => 0,
+      'id' => '',
+      'title' => '',
+      'title_max_length' => $max_length,
+      'description' => '',
+      'menu_name' => $menu_name,
+      'parent' => '',
+      'weight' => 0,
+    ];
+  }
+  return $defaults;
+}
+
+
 //function multiple_node_menu_form_alter(&$form, &$form_state, $form_id) {
 //  kint($form_id);
 //}
@@ -114,7 +197,8 @@ function multiple_node_menu_form_node_form_alter(&$form, FormStateInterface &$fo
 //  $node = $form['#node'];
   $node = $form_state->getFormObject()->getEntity();
   $node_type = $node->type->entity;
-  $defaults = menu_ui_get_menu_link_defaults($node);
+  $defaults = multiple_node_menu_get_menu_link_defaults($node);
+//  kint($defaults);
   $menu_names = menu_ui_get_menus();
   $type_menus = $node_type->getThirdPartySetting('menu_ui', 'available_menus', ['main']);
   $available_menus = [];
@@ -156,13 +240,42 @@ function multiple_node_menu_form_node_form_alter(&$form, FormStateInterface &$fo
 //    kint($i);
 //    kint($values[$i]['title']);
     // Populate the element with the link data.
-    kint($values[$i]);
-    if ($values[$i]['id']) {
-      $default = $defaults['menu_name'] . ':' . $defaults['parent'];
+//    kint($values[$i]);
+//    if ($values[$i]['id']) {
+//      $default = $defaults['menu_name'] . ':' . $defaults['parent'];
+//    }
+//    else {
+//      $default = $node_type->getThirdPartySetting('menu_ui', 'parent', 'main:');
+//    }
+
+
+
+
+//    if ($values[$i]['id']) {
+//      $default = $defaults['menu_name'] . ':' . $defaults['parent'];
+//    }
+//    else {
+//      $default = $node_type->getThirdPartySetting('menu_ui', 'parent', 'main:');
+//    }
+
+//
+//    if ($defaults['id']) {
+//      $default = $defaults['menu_name'] . ':' . $defaults['parent'];
+//    }
+//    else {
+//      $default = $node_type->getThirdPartySetting('menu_ui', 'parent', 'main:');
+//    }
+
+    if ($defaults[$i]) {
+      $default = $defaults[$i]['menu_name'] . ':' . $defaults[$i]['parent'];
     }
     else {
       $default = $node_type->getThirdPartySetting('menu_ui', 'parent', 'main:');
     }
+//    kint($default);
+
+
+
 //    kint("default id");
 //    kint($defaults['id']);
 //    kint("default");
@@ -170,28 +283,30 @@ function multiple_node_menu_form_node_form_alter(&$form, FormStateInterface &$fo
 //    $parent_element = $menu_parent_selector->parentSelectElement($default, $defaults['id'], $available_menus);
 //    $parent_element = $menu_parent_selector->parentSelectElement($values[$i]['menu_parent'], "menu_link_content:f040bfd4-6762-41bd-ba60-d5f7b4a4c25a", $available_menus);
 //    kint($values[$i]['menu_parent']);
-    $parent_element = $menu_parent_selector->parentSelectElement($values[$i]['menu_parent'], $values[$i]['id'], $available_menus);
+//    $parent_element = $menu_parent_selector->parentSelectElement($defaults[$i]['menu_parent'], $defaults[$i]['id'], $available_menus);
+    $parent_element = $menu_parent_selector->parentSelectElement($default, $defaults[$i]['id'], $available_menus);
 
 //    $parent_element = $menu_parent_selector->parentSelectElement('main:menu_link_content:5afffd5f-4828-4ca6-9674-ff58c7e9813c', "menu_link_content:f040bfd4-6762-41bd-ba60-d5f7b4a4c25a", $available_menus);
 
+    kint($defaults[$i]);
     foreach (['id', 'entity_id'] as $key) {
       $form['menu']['menu_form_node'][$i][$key] = [
         '#type' => 'value',
-        '#value' => $values[$i][$key]
+        '#value' => $defaults[$i][$key]
       ];
     }
 
     $form['menu']['menu_form_node'][$i]['title'] = [
       '#type' => 'textfield',
       '#title' => t('Menu link title'),
-      '#default_value' => $values[$i]['title'],
+      '#default_value' => $defaults[$i]['title'],
 //    '#maxlength' => $defaults['title_max_length'],
     ];
 
     $form['menu']['menu_form_node'][$i]['description'] = [
       '#type' => 'textarea',
       '#title' => t('Description'),
-      '#default_value' => $values[$i]['description'],
+      '#default_value' => $defaults[$i]['description'],
       '#rows' => 1,
       '#description' => t('Shown when hovering over the menu link.'),
     ];
@@ -205,8 +320,22 @@ function multiple_node_menu_form_node_form_alter(&$form, FormStateInterface &$fo
     $form['menu']['menu_form_node'][$i]['enabled'] = [
       '#type' => 'checkbox',
       '#title' => t('Enabled'),
-      '#default_value' => (int) (bool) $values[$i]['enabled'],
+      '#default_value' => (int) (bool) $defaults[$i]['enabled'],
     ];
+
+
+    $form['menu']['menu_form_node'][$i]['delete'] = array(
+      '#type' => 'submit',
+      '#value' => t('Delete'),
+      '#submit' => array('multiple_node_menu_remove_link_submit'),
+      // Restrict validation to appropriate fields only.
+//    '#limit_validation_errors' => array(array('multiple_node_menu', 'add_link')),
+      '#ajax' => array(
+//      'callback' => '::multiple_node_menu_ajax_callback',
+        'callback' => 'custom_multiple_node_menu_ajax_callback',
+        'wrapper' => 'multiple-node-menu-wrapper',
+      ),
+    );
 
   }
 
@@ -225,6 +354,9 @@ function multiple_node_menu_form_node_form_alter(&$form, FormStateInterface &$fo
       'wrapper' => 'multiple-node-menu-wrapper',
     ),
   );
+
+
+
 
 
 
@@ -531,6 +663,17 @@ function multiple_node_menu_node_form_submit($form, FormStateInterface $form_sta
 
 
   \Drupal::state()->set('menu_options_' . $node->bundle(), $values);
+  foreach($values as $value) {
+//    kint($value);
+//    if($value['enabled']) {
+      $value['menu_name'] = "main";
+//      $value['parent'] = trim($value['menu_parent'], "main:");
+      $value['parent'] = str_replace('main:', '', $value['menu_parent']);
+      _multiple_node_menu_node_save($node, $value);
+
+//    }
+  }
+//  exit;
 //  $x = \Drupal::state()->get('menu_options_' . $node->bundle());
 //  kint($x);exit;
 //
@@ -597,6 +740,44 @@ function multiple_node_menu_node_form_submit($form, FormStateInterface $form_sta
 
 }
 
+/**
+ * Helper function to create or update a menu link for a node.
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   Node entity.
+ * @param array $values
+ *   Values for the menu link.
+ */
+function _multiple_node_menu_node_save(NodeInterface $node, array $values) {
+  /** @var \Drupal\menu_link_content\MenuLinkContentInterface $entity */
+  if (!empty($values['entity_id'])) {
+    $entity = MenuLinkContent::load($values['entity_id']);
+    if ($entity->isTranslatable()) {
+      if (!$entity->hasTranslation($node->language()->getId())) {
+        $entity = $entity->addTranslation($node->language()->getId(), $entity->toArray());
+      }
+      else {
+        $entity = $entity->getTranslation($node->language()->getId());
+      }
+    }
+    // Update enabled value.
+    $entity->enabled->value = $values['enabled'];
+  }
+  else {
+    // Create a new menu_link_content entity.
+    $entity = MenuLinkContent::create([
+      'link' => ['uri' => 'entity:node/' . $node->id()],
+      'langcode' => $node->language()->getId(),
+    ]);
+    $entity->enabled->value = 1;
+  }
+  $entity->title->value = trim($values['title']);
+  $entity->description->value = trim($values['description']);
+  $entity->menu_name->value = $values['menu_name'];
+  $entity->parent->value = $values['parent'];
+  $entity->weight->value = isset($values['weight']) ? $values['weight'] : 0;
+  $entity->save();
+}
 
 /**
  * Generate a form for editing a menu links.
@@ -843,23 +1024,34 @@ function multiple_node_menu_add_link_submit(array $form, FormStateInterface $for
  * Submit handler for "remove" button.
  */
 function multiple_node_menu_remove_link_submit($form, &$form_state) {
-  $values = &$form_state['values'];
-  $node = &$form_state['node'];
 
-  $delta = key($values['multiple_node_menu']['current_links']);
+  $node = $form_state->getFormObject()->getEntity();
+//  $links_count = \Drupal::state()->get('menu_options_custom_blog_links_count');
+  $links_count = \Drupal::state()->get('menu_options_' . $node->bundle() . 'links_count');
 
-  $link = $node->multiple_node_menu_links[$delta];
+  $links_count--;
+  \Drupal::state()->set('menu_options_' . $node->bundle() . 'links_count', $links_count);
+  drupal_set_message($links_count);
 
-  // Set link to be deleted from database.
-  if (!empty($link['mlid'])) {
-    $node->multiple_node_menu_links_deleted[] = $link['mlid'];
-  }
 
-  // Unset the item so it get removed from the form.
-  unset($node->multiple_node_menu_links[$delta]);
 
-  // Cause the form to rebuild so the item is removed from the list.
-  $form_state['rebuild'] = TRUE;
+//  $values = &$form_state['values'];
+//  $node = &$form_state['node'];
+//
+//  $delta = key($values['multiple_node_menu']['current_links']);
+//
+//  $link = $node->multiple_node_menu_links[$delta];
+//
+//  // Set link to be deleted from database.
+//  if (!empty($link['mlid'])) {
+//    $node->multiple_node_menu_links_deleted[] = $link['mlid'];
+//  }
+//
+//  // Unset the item so it get removed from the form.
+//  unset($node->multiple_node_menu_links[$delta]);
+//
+//  // Cause the form to rebuild so the item is removed from the list.
+//  $form_state['rebuild'] = TRUE;
 }
 
 /**
